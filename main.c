@@ -22,12 +22,25 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
-#include<stdlib.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+struct pid{
+	float previous_error;
+	float current_error;
+	float current_time;
+	float previous_time;
+	float time;
+	float total_error;
+	float error_derivative;
+	float kp,ki,kd;
+	float U;
+	float temp_error;
+};
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -37,65 +50,75 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define time 10
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-int led=0;
-uint8_t data[5];
-///uint8_t ledcontrol[1];
-uint8_t leds[]="led";
-uint8_t servos[]="servo";
-uint8_t ledOn[5]={1,0,0,0,0};
-uint8_t servocontrol[3];
-int ledflag, servoflag, angle,num,finishflag,startflag =0;
-int buttonpressed;
-float mappedangle;
-uint16_t got;
-int time;
-uint8_t on[]="system is on";
-uint8_t off[]="system is off";
-
+uint8_t Data[10];
+float mappedangleX,mappedangleY,desiredPositionX = 80 ,desiredPositionY= 80;
+int measuredPositionX, measuredPositionY, lowerlimit=-500000, upperlimit=500000;
+struct pid pidx, pidy;
+uint8_t ErrEna=1,baseY=85,baseX=78;
+uint32_t Curr_sample, prevsample, Timepassed, TimeCurrr,temp_sample;
+float kp1=0.4, kp2=1,kp1y=0.45,kp2y=0.45,Ytemp_error,Xtemp_error;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
-static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int mapping(int x, int in_min, int in_max, int out_min, int out_max) {
+float mapping(float x, int in_min, int in_max, int out_min, int out_max) {
     return out_min + (x - in_min) * (out_max - out_min) / (in_max - in_min);
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-	  {
-	  	if (GPIO_Pin == B1_Pin){
-	  		 __HAL_TIM_SET_COUNTER(&htim3, 0);
-	  	}
-	  }
+void pid_control(struct pid* pid_name){
+	pid_name->total_error += pid_name->current_error;
+	pid_name->error_derivative = (pid_name->temp_error - pid_name->previous_error) / time;
+
+	if (pid_name->total_error > upperlimit ) pid_name->total_error = upperlimit ;
+	if (pid_name->total_error < lowerlimit ) pid_name->total_error = lowerlimit;
+
+	pid_name-> U = pid_name->kp * pid_name-> current_error + pid_name->ki * pid_name->total_error + pid_name->kd * pid_name->error_derivative ;
+
+}
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+* @brief The application entry point.
+* @retval int
+*/
 int main(void)
 {
 
-  /* USER CODE BEGIN 1 */
+/* USER CODE BEGIN 1 */
+		pidx.previous_time = 0;
+		pidx.previous_error = 0;
+		pidx.total_error = 0;
+		pidx.error_derivative = 0;
+		pidy.previous_time = 0;
+		pidy.previous_error = 0;
+		pidy.total_error = 0;
+		pidy.error_derivative = 0;
+		pidx.kp=2;
+		pidx.ki=0.000015; //0.00000005
+		pidx.kd=80;
+		pidy.kp=0.45;
+		pidy.ki=0.000015;
+		pidy.kd=80;
 
   /* USER CODE END 1 */
 
@@ -118,90 +141,80 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_TIM1_Init();
   MX_TIM2_Init();
-  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-
+ HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+ HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+ __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1,1500);
+ __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1,1500);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  time= __HAL_TIM_GET_COUNTER(&htim3);
-	  buttonpressed=  !HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
-
-	  if(buttonpressed){
-		  HAL_TIM_Base_Start(&htim3);
-
-	  		 if(time >10000 && time<20000 && startflag==0){
-	  			 startflag=1;
-	  			 finishflag=0;
-	  			 HAL_UART_Transmit(&huart2, on, 13, 500);
-
-	  		 }
-	  		 else if(time>20000 && finishflag==0){
-	  			 finishflag=1;
-	  			 startflag=0;
-	  			HAL_UART_Transmit(&huart2, off, 14, 500);
-	  		}
-
-	  	}
-	  else {
-		  HAL_TIM_Base_Stop(&htim3);
-	  }
-
-
-if(startflag){
-	  	HAL_UART_Receive(&huart2, data, 5, 50);
-
-		if (memcmp((char *)data, (char *)leds,3)==0){
-			memset(data,0,5);
-			ledflag=1;
-			servoflag=0;
-		}
-		else if (strcmp((char *)data, (char *)servos)==0){
-			memset(data,0,5);
-			servoflag=1;
-			ledflag=0;
-		}
-
-	  	if(ledflag==1){
-	  		 num = atoi((char *)data);
-				if(num==1){
-					HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-				}
-				else {
-					HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-				}
-	  	}
-	  	else if(servoflag==1){
-
-	  		 angle = atoi((char *)data);
-	  		mappedangle= mapping(angle,0,180,500,2500);
-	  		 __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, mappedangle);
-	  		  got = (uint16_t)(5 - huart2.RxXferCount); // bytes actually received
-	  		 if(got){
-	  		  for(int i=got;i<5;i++){
-	  			  data[i]='\0';
-	  		  }
-	  		 }
-
-
-
-	  	}
-}
-else if(finishflag){
-
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-
-
-}
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  Timepassed = HAL_GetTick() - TimeCurrr;
+	  if (Timepassed>=time)
+	  {	  pidx.previous_error = pidx.temp_error;
+		  pidx.temp_error =pidx.current_error;
+
+		  pidy.previous_error = pidy.temp_error;
+		  pidy.temp_error =pidy.current_error;
+
+		  TimeCurrr = HAL_GetTick();
+	  }
+		HAL_UART_Receive_IT(&huart2, Data, 10);
+				if (sscanf((char*)Data, "<%3d,%3d>", &measuredPositionX, &measuredPositionY) == 2)
+				        {
+
+				pidx.current_error= (desiredPositionX - measuredPositionX)/10;
+				pidy.current_error= (desiredPositionY - measuredPositionY)/10;
+				if (pidx.current_error >=0)
+						{
+							pidx.kp=kp1;
+						}
+						else
+						{
+							pidx.kp=kp2;
+						}
+
+				if (pidy.current_error >=0)
+							{
+								pidy.kp=kp1y;
+							}
+							else
+							{
+								pidy.kp=kp2y;
+							}
+//				if (ErrEnak == 0)
+//				{
+//					pidx.current_error =0;
+//					pidy.current_error =0;
+//				}
+
+				pid_control(&pidx);
+				pid_control(&pidy);
+
+				if (pidx.U > 30) pidx.U = 30;
+				else if (pidx.U < -30) pidx.U = -30;
+
+				if (pidy.U > 30) pidy.U = 30;
+				else if (pidy.U < -30) pidy.U = -30;
+
+			mappedangleX = mapping((baseX - pidx.U), 0, 180, 500, 2500);
+		  	mappedangleY = mapping((baseY + pidy.U), 0, 180, 500, 2500);
+
+			__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1,(uint32_t)mappedangleX);
+			__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (uint32_t)mappedangleY);
+
+
+
+				            }
+
   }
   /* USER CODE END 3 */
 }
@@ -254,6 +267,81 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 84-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 20000-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+  HAL_TIM_MspPostInit(&htim1);
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -275,7 +363,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 84-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 20000;
+  htim2.Init.Period = 20000-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -309,51 +397,6 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
-
-}
-
-/**
-  * @brief TIM3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM3_Init(void)
-{
-
-  /* USER CODE BEGIN TIM3_Init 0 */
-
-  /* USER CODE END TIM3_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM3_Init 1 */
-
-  /* USER CODE END TIM3_Init 1 */
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 42000-1;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 0xFFFF-1;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM3_Init 2 */
-
-  /* USER CODE END TIM3_Init 2 */
 
 }
 
@@ -398,9 +441,8 @@ static void MX_USART2_UART_Init(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-  /* USER CODE BEGIN MX_GPIO_Init_1 */
-
-  /* USER CODE END MX_GPIO_Init_1 */
+/* USER CODE BEGIN MX_GPIO_Init_1 */
+/* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -414,7 +456,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
@@ -424,13 +466,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-
-  /* USER CODE BEGIN MX_GPIO_Init_2 */
-
-  /* USER CODE END MX_GPIO_Init_2 */
+/* USER CODE BEGIN MX_GPIO_Init_2 */
+/* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
