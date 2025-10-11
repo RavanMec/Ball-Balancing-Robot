@@ -14,7 +14,9 @@ This creates a smooth and stable feedback loop to keep the ball centered.
 Capture real-time X and Y coordinates of the ball (via UART).
 Error Calculation → Compute the deviation from the center (setpoint).
 PID Control → Apply
+
 <img width="468" height="88" alt="image" src="https://github.com/user-attachments/assets/8ed98639-6e4d-426a-92a4-2e4a88566fdf" />
+
 Servo Control → Convert control output into PWM duty cycle signals for servos.
 Feedback Update → Repeat continuously for real-time balance.
 
