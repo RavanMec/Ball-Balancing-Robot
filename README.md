@@ -31,4 +31,6 @@ Smooth motion response with low steady-state error
 To design and implement a real-time embedded control system using STM32F446 that demonstrates dynamic stability, mechanical design, and control theory through a fully 3D-printed mechatronic platform.
 
 
+https://github.com/user-attachments/assets/04f4b51e-ffb6-4209-b327-f6c707b67a21
+
 
