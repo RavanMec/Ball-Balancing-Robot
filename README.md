@@ -32,5 +32,6 @@ To design and implement a real-time embedded control system using STM32F446 that
 
 
 https://github.com/user-attachments/assets/04f4b51e-ffb6-4209-b327-f6c707b67a21
+<img width="800" height="581" alt="image" src="https://github.com/user-attachments/assets/c02f151e-d524-4067-8344-4ed2b3d3f075" />
 
 
